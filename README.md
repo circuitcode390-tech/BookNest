@@ -104,3 +104,4 @@ Access the web portal at: `http://localhost:5173`
 | `POST` | `/api/users` | Admin | Provisions a new member or staff user |
 | `PUT` | `/api/users/:id` | Admin | Updates user information and/or password |
 | `DELETE`| `/api/users/:id` | Admin | Removes a user account |
+"# BookNest" 
