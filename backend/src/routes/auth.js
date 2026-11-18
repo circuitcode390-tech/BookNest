@@ -6,6 +6,22 @@ import { pool } from '../config/db.js';
 
 const router = Router();
 
+router.get('/setup-status', async (req, res) => {
+  try {
+    const [rows] = await pool.execute(
+      'SELECT COUNT(*) AS total FROM users'
+    );
+
+    res.json({
+      setupRequired: Number(rows[0].total) === 0
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      message: 'Could not check setup status'
+    });
+  }
+});
 
 router.post('/setup-admin', async (req, res) => {
   let connection;
