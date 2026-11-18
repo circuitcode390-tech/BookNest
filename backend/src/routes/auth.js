@@ -5,8 +5,59 @@ import { pool } from '../config/db.js';
 
 const router = Router();
 
+router.post('/setup-admin', async (req, res) => {
+  try {
+    const { name, membershipId, password } = req.body;
+
+    if (!name || !membershipId || !password || password.length < 8) {
+      return res.status(400).json({
+        message: 'Name, membership ID and password (at least 8 characters) are required'
+      });
+    }
+
+    // Check whether an admin already exists
+    const [admins] = await pool.execute(
+      "SELECT id FROM users WHERE role = 'admin' LIMIT 1"
+    );
+
+    if (admins.length > 0) {
+      return res.status(403).json({
+        message: 'Administrator setup is already completed'
+      });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+
+    await pool.execute(
+      'INSERT INTO users (name, membership_id, role, password_hash) VALUES (?, ?, ?, ?)',
+      [name, membershipId, 'admin', hash]
+    );
+
+    res.status(201).json({
+      message: 'Administrator account created successfully'
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      message: 'Administrator setup failed'
+    });
+  }
+});
+
 router.post('/login', async (req, res) => {
   try {
+
+    const setupKey = req.headers['x-setup-key'];
+
+    if (
+      !process.env.ADMIN_SETUP_KEY ||
+      setupKey !== process.env.ADMIN_SETUP_KEY
+    ) {
+      return res.status(403).json({
+        message: 'Unauthorized administrator setup'
+      });
+    }
     const { membershipId, password } = req.body;
     if (!membershipId || !password) {
       return res.status(400).json({ message: 'Membership ID and password are required' });
