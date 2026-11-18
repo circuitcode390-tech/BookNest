@@ -1,3 +1,4 @@
+
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -5,18 +6,46 @@ import { pool } from '../config/db.js';
 
 const router = Router();
 
+
 router.post('/setup-admin', async (req, res) => {
+  let connection;
+  let lockAcquired = false;
+
   try {
+    const setupKey = req.headers['x-setup-key'];
+
+    if (
+      !process.env.ADMIN_SETUP_KEY ||
+      setupKey !== process.env.ADMIN_SETUP_KEY
+    ) {
+      return res.status(403).json({
+        message: 'Unauthorized administrator setup'
+      });
+    }
+
     const { name, membershipId, password } = req.body;
 
     if (!name || !membershipId || !password || password.length < 8) {
       return res.status(400).json({
-        message: 'Name, membership ID and password (at least 8 characters) are required'
+        message: 'Name, membership ID and password are required'
       });
     }
 
-    // Check whether an admin already exists
-    const [admins] = await pool.execute(
+    connection = await pool.getConnection();
+
+    const [lockRows] = await connection.query(
+      "SELECT GET_LOCK('booknest_admin_setup', 10) AS acquired"
+    );
+
+    if (lockRows[0].acquired !== 1) {
+      return res.status(503).json({
+        message: 'Admin setup is busy. Please try again.'
+      });
+    }
+
+    lockAcquired = true;
+
+    const [admins] = await connection.execute(
       "SELECT id FROM users WHERE role = 'admin' LIMIT 1"
     );
 
@@ -28,39 +57,43 @@ router.post('/setup-admin', async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
 
-    await pool.execute(
+    await connection.execute(
       'INSERT INTO users (name, membership_id, role, password_hash) VALUES (?, ?, ?, ?)',
       [name, membershipId, 'admin', hash]
     );
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'Administrator account created successfully'
     });
 
   } catch (error) {
     console.error(error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Administrator setup failed'
     });
+
+  } finally {
+    if (connection) {
+      if (lockAcquired) {
+        await connection.query(
+          "SELECT RELEASE_LOCK('booknest_admin_setup')"
+        ).catch(console.error);
+      }
+      connection.release();
+    }
   }
 });
 
+
+// Normal login
 router.post('/login', async (req, res) => {
   try {
-
-    const setupKey = req.headers['x-setup-key'];
-
-    if (
-      !process.env.ADMIN_SETUP_KEY ||
-      setupKey !== process.env.ADMIN_SETUP_KEY
-    ) {
-      return res.status(403).json({
-        message: 'Unauthorized administrator setup'
-      });
-    }
     const { membershipId, password } = req.body;
+
     if (!membershipId || !password) {
-      return res.status(400).json({ message: 'Membership ID and password are required' });
+      return res.status(400).json({
+        message: 'Membership ID and password are required'
+      });
     }
 
     const [rows] = await pool.execute(
@@ -69,10 +102,13 @@ router.post('/login', async (req, res) => {
     );
 
     if (!rows.length || !(await bcrypt.compare(password, rows[0].password_hash))) {
-      return res.status(401).json({ message: 'Incorrect membership ID or password' });
+      return res.status(401).json({
+        message: 'Incorrect membership ID or password'
+      });
     }
 
     const user = rows[0];
+
     const token = jwt.sign(
       {
         id: user.id,
@@ -93,8 +129,11 @@ router.post('/login', async (req, res) => {
         role: user.role,
       },
     });
+
   } catch (error) {
-    res.status(500).json({ message: 'Login failed', error: error.message });
+    res.status(500).json({
+      message: 'Login failed'
+    });
   }
 });
 
