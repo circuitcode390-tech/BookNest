@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Books from './pages/Books';
 import Transactions from './pages/Transactions';
+import SetupAdmin from './pages/SetupAdmin';
 import Users from './pages/Users';
 import './style.css';
 
@@ -30,6 +31,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/setup-admin" element={<SetupAdmin />} />
 
           <Route
             element={
